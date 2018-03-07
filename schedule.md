@@ -1,3 +1,5 @@
+﻿
+
 # 进程调度
 
 [TOC]
@@ -37,7 +39,7 @@
 | int                **prio**;            | 动态优先级                                                   |
 | int             **static_prio**;        | 静态优先级，进程启动时分配的优先级，可以通过nice和sched_setscheduler系统调用来进行修改, 否则在进程运行期间会一直保持恒定 |
 | int             **normal_prio**;        | 普通优先级，表示基于进程的静态优先级static_prio和调度策略计算出的优先级. 因此即使普通进程和实时进程具有相同的静态优先级, 其普通优先级也是不同的, 进程分叉(fork)时, 子进程会继承父进程的普通优先级 |
-| unsigned int    **rt_priority**;        | 实时优先级，实时进程的优先级，用户可以通过sched_setparam()和sched_setscheduler()来改变进程的实时优先级 |
+| unsigned int    **rt_priority**;        | 实时优先级，实时进程的优先级，用户可以通过sched_setparam()和sched_setscheduler()来改变进程的实时优先级。rt_priority缺省值为0，表示非实时任务。[1，99]表示实时任务 |
 
 ​	优先级先关数值的定义。
 
@@ -60,17 +62,15 @@
 #define MAX_USER_PRIO       (USER_PRIO(MAX_PRIO))
 ```
 
-​	在用户空间用户可以使用nice命令设置进程的优先级，nice值在-20到+19之间，数值越小，优先级越高。	
+​    在用户空间用户可以使用nice命令设置进程的优先级，nice值在-20到+19之间，数值越小，优先级越高。	
 
-​	内核使用数值范围0~139表示内部优先级, 数值越低, 优先级越高。从1~99的范围专供实时进程使用, nice的值[-20,19]则映射到范围100~139![Ashampoo_Snap_2018年2月4日_19h20m23s_001_](F:\screenshoot\Ashampoo_Snap_2018年2月4日_19h20m23s_001_.png)
+​    内核使用数值范围0~139表示内部优先级, 数值越低, 优先级越高。从1~99的范围专供实时进程使用, nice的值[-20,19]则映射到范围100~139![Ashampoo_Snap_2018年2月4日_19h20m23s_001_](F:\screenshoot\Ashampoo_Snap_2018年2月4日_19h20m23s_001_.png)
 
 ​	普通进程的静态优先级和动态优先级数值范围为[100,139]，实时进程的实时优先级范围为[0，99]。
 
 > 普通进程的动态优先级=max(100 , min(静态优先级 – bonus + 5) , 139)  
 
 ​	bonus的范围为[0,10]
-
-
 
 #### 1.3.2 计算优先级
 
@@ -121,7 +121,7 @@ static inline int normal_prio(struct task_struct *p)
 | 优先级提高至实时优先级的非实时进程 | static_prio |          static_prio           |    不变     |
 | SCHED_DEADLINE调度策略的进程       | static_prio |         MAX_DL_PRIO-1          |    不变     |
 
-​	在进程分支出子进程时，子进程的静态优先级继承自父进程。子进程的动态优先级，即task_struct->prio，则设置为父进程的普通优先级。
+​	**在进程分支出子进程时，子进程的静态优先级继承自父进程。子进程的动态优先级，即task_struct->prio，则设置为父进程的普通优先级。**
 
 
 
@@ -131,7 +131,7 @@ static inline int normal_prio(struct task_struct *p)
 
 ​	调度器的存在就是为了让进程尽可能公平地共享CPU时间，创造并行执行的效果。所以调度器的主要任务是：**1. 根据调度策略对进程进行调度。2. 调度后进行上下文切换。**
 
-​	目前Linux有两种调度器：一种是进程由于打算睡眠或者其他原因放弃CPU而直接激活的调度器，叫做**主调度器**；另一种就是通过周期性机制，以固定频率运行检测是否有程序需要进行进程切换，叫做**周期性调度器**。两者统称为：**通用调度器**（generic scheduler）或**核心调度器**（core scheduler）。
+​	目前Linux有两种调度器：一种是进程由于打算睡眠或者其他原因放弃CPU而直接激活的调度器，叫做**主调度器**；另一种就是通过周期性机制，以固定频率运行检测是否有程序需要进行进程切换，定时更新调度相关的统计信息，但不负责进程切换，叫做**周期性调度器**。两者统称为：**通用调度器**（generic scheduler）或**核心调度器**（core scheduler）。
 
 ![Ashampoo_Snap_2018年2月8日_15h00m34s_005_](F:\screenshoot\Ashampoo_Snap_2018年2月8日_15h00m34s_005_.png)
 
@@ -157,7 +157,7 @@ unsigned int time_slice;/*指定实时进程可使用的CPU剩余时间段*/
 
 #### 1.4.1 主调度器
 
-​	在内核中的许多地方，如果要将CPU分配给与当前活动进程不同的另一个进程，都会直接调用主调度器函数（schedule）。内核需要知道在什么时候调用schedule，所以内核给进程描述符提供了一个**TIF_NEED_RESCHED**标志来表明需要再次执行schedule，当某个进程应当被抢占时，schedule_tick就会设置这个标志，当一个优先级高的进程进入可执行状态时，try_to_wake_up也会设置这个标志。在从系统调用返回之后，内核会检查当前进程是否设置了重调度标志TIF_NEED_RESCHED，如果设置了，内核就会调用schedule。
+​	主调度器主要负责进程的切换。内核需要知道在什么时候调用schedule，所以内核给进程描述符提供了一个**TIF_NEED_RESCHED**标志来表明需要再次执行schedule，当某个进程应当被抢占时，schedule_tick就会设置这个标志，当一个优先级高的进程进入可执行状态时，try_to_wake_up也会设置这个标志。在从系统调用返回之后，内核会检查当前进程是否设置了重调度标志TIF_NEED_RESCHED，如果设置了，内核就会调用schedule。
 
 > 该函数主要完成如下工作：
 >
@@ -216,13 +216,11 @@ asmlinkage __visible void __sched schedule(void)
 具体的调度是在`__schedule`函数中完成的
 
 1. 完成一些必要的检查, 并设置进程状态, 处理进程所在的就绪队列
-
-2. 调度全局的pick_next_task选择抢占的进程
+2. 调度全局的**pick_next_task**选择抢占的进程
 
    - 如果当前cpu上所有的进程都是cfs调度的普通非实时进程, 则直接用cfs调度, 如果无程序可调度则调度idle进程
    - 否则从优先级最高的调度器类sched_class_highest(目前是stop_sched_class)开始依次遍历所有调度器类的pick_next_task函数, 选择最优的那个进程执行
-
-3. context_switch完成进程上下文切换
+3. **context_switch**完成进程上下文切换
 
    - 调用switch_mm(), 把虚拟内存从一个进程映射切换到新进程中
    - 调用switch_to(),从上一个进程的处理器状态切换到新进程的处理器状态。这包括保存、恢复栈信息和寄存器信息
@@ -232,7 +230,7 @@ asmlinkage __visible void __sched schedule(void)
 
 ####1.4.2 周期性调度器 
 
-​	周期性调度器在scheduler_tick中实现。如果系统正在活动中，内核会按照频率HZ自动调用该
+​	周期性调度器在scheduler_tick中实现。scheduler_tick（）作用：**更新CPU和当前进行的一些数据，然后根据当前进程的调度类，调用task_tick()函数**。如果系统正在活动中，内核会按照频率HZ自动调用该
 函数。如果没有进程在等待调度，那么在计算机电力供应不足的情况下，也可以关闭该调度器以减少
 电能消耗。
 
@@ -286,7 +284,7 @@ void scheduler_tick(void)
 
 ####1.4.3 上下文切换
 
-​	进程被抢占时, 操作系统保存其上下文信息, 同时将新的活动进程的上下文信息加载进来, 这个过程就是**上下文切换**。当这个进程再次成为活动的, 它可以恢复自己的上下文继续从被抢占的位置开始执行。由于上下文切换过程较为繁杂，所以简单介绍。
+​	进程被抢占时, 操作系统保存其上下文信息, 同时将新的活动进程的上下文信息加载进来, 这个过程就是**上下文切换**。当这个进程再次成为活动的, 它可以恢复自己的上下文继续从被抢占的位置开始执行。主要由`_schedule`内的`context__switch`完成。
 
 > 一个进程的[上下文](https://www.cnblogs.com/wanghuaijun/p/6985672.html)可以分为三个部分:**用户级上下文**、**寄存器上下文**以及**系统级上下文**。
 >
@@ -294,10 +292,12 @@ void scheduler_tick(void)
 > - 寄存器上下文: 通用寄存器、程序寄存器(IP)、处理器状态寄存器(EFLAGS)、栈指针(ESP)；
 > - 系统级上下文: 进程控制块task_struct、内存管理信息(mm_struct、vm_area_struct、pgd、pte)、内核栈。
 
-​	上下文切换只能发生在内核态中，上下文切换通常是计算密集型的，对系统来说意味着消耗大量的 CPU 时间，事实上，可能是操作系统中时间消耗最大的操作。进程调度调度时，内核选择新进程之后进行抢占，通过**context_switch**完成进程上下文切换，主要通过以下两个处理函数完成：	
 
-(1) **switch_mm**更换通过task_struct->mm描述的内存管理上下文。该工作的细节取决于处理器，主要包括加载页表、刷出地址转换后备缓冲器（部分或全部）、向内存管理单元（MMU）提供新的信息。
-(2) **switch_to**切换处理器寄存器内容和内核栈，从上一个进程的处理器状态切换到新进程的处理器状态。这包括保存、恢复栈信息和寄存器信息（虚拟地址空间的用户部分在第一步已经变更，其中也包括了用户状态下的栈，因此用户栈就不需要显式变更了）。**此项工作在不同的体系结构下可能差别很大，代码通常都使用汇编语言编写。**
+
+​	上下文切换只能发生在内核态中，上下文切换通常是计算密集型的，对系统来说意味着消耗大量的 CPU 时间，事实上，可能是操作系统中时间消耗最大的操作。进程调度调度时，内核选择新进程之后进行抢占，**context_switch**内通过以下两个处理函数完成：	
+
+​	(1) **switch_mm** ：更换通过task_struct->mm描述的内存管理上下文。该工作的细节取决于处理器，主要包括加载页表、刷出地址转换后备缓冲器（部分或全部）、向内存管理单元（MMU）提供新的信息。	context_switch( )函数建立next的地址空间。进程描述符的**active_mm**字段指向进程所使用的内存描述符，而**mm**字段指向进程所拥有的内存描述符。对于一般的进程，这两个字段有相同的地址，但是，内核线程没有它自己的地址空间而且它的 mm字段总是被设置为NULL。在context_switch( )函数内：如果next是一个内核线程，它使用prev所使用的地址空间，如果next是一个普通进程，schedule( )函数用next的地址空间替换prev的地址空间。
+​	(2) **switch_to** ：切换处理器寄存器内容和内核栈，从上一个进程的处理器状态切换到新进程的处理器状态。这包括保存、恢复栈信息和寄存器信息（虚拟地址空间的用户部分在第一步已经变更，其中也包括了用户状态下的栈，因此用户栈就不需要显式变更了）。**此项工作在不同的体系结构下可能差别很大，代码通常都使用汇编语言编写。**
 
 ### 1.5 调度策略
 
@@ -328,7 +328,7 @@ void scheduler_tick(void)
 
 ### 1.6 调度类
 
-​	(1) 调度类用于判断接下来运行哪个进程。内核支持不同的调度策略（完全公平调度、实时调度、在无事可做时调度空闲进程），调度类使得能够以模块化方法实现这些策略，即一个类的代码不需要与其他类的代码交互。在调度器被调用时，它会查询调度器类，得知接下来运行哪个进程。
+​	(1) 调度类用于判断接下来运行哪个进程。内核支持不同的调度策略（完全公平调度、实时调度、在无事可做时调度空闲进程），调度类使得能够以模块化方法实现这些策略，即一个类的代码不需要与其他类的代码交互。在调度器被调用时，它会查询调度类，得知接下来运行哪个进程。
 ​	(2) 在选中将要运行的进程之后，必须执行底层任务切换。这需要与CPU的紧密交互。每个进程都有其调度类，各个调度类负责管理所属的进程。**通用调度器自身完全不涉及进程管理，其工作都委托给调度类。**
 
 ```c
@@ -402,7 +402,9 @@ struct sched_class {
 
 
 
-### 1.7 就绪队列
+### 1.7 就绪队列与等待队列
+
+#### 1.7.1 就绪队列
 
 ​	核心调度器用来管理活动进程的主要数据结构成为就绪队列。各个CPU都有自身的就绪队列，也就是 struct rq 结构，其用于描述在此CPU上所运行的所有进程，包括一个实时进程队列和一个根CFS运行队列，在调度时，调度器首先会先去实时进程队列找是否有实时进程需要运行，如果没有才会去CFS运行队列找是否有进行需要运行，这就是为什么常说的实时进程优先级比普通进程高，不仅仅体现在prio优先级上，还体现在调度器的设计上，各个活动进程只能出现在一个就绪队列中，就是说一个进程在多个CPU上同时运行是不可能的，但是发源于同一个进程的线程组中的各个线程可以在不同CPU上运行。
 
@@ -435,6 +437,14 @@ struct rq {
 
 ​	系统的所有就绪队列都在[runqueues](https://www.cnblogs.com/openix/p/3264099.html)数组中，该数组的每个元素分别对应于系统中的一个CPU。在单处理器系统中，由于只需要一个就绪队列，数组只有一个元素。
 
+#### 1.7.2 等待队列
+
+​           等待队列可以看作保存进程的容器，在阻塞进程时，将进程放入等待队列；当唤醒进程时，从等待队列中取出进程。
+
+​	**睡眠和唤醒操作**：对等待队列的操作包括睡眠和唤醒（相关函数保存在源代码树的/kernel/sched.c和include/linux/sched.h中）。思想是更改当前进程（CURRENT）的任务状态，并要求重新调度，因为这时这个进程的状态已经改变，不再在调度表的就绪队列中，因此无法再获得执行机会，进入"睡眠"状态，直至被"唤醒"，即其任务状态重新被修改回就绪态。
+
+​	常用的睡眠操作有interruptible_sleep_on和sleep_on。两个函数类似，只不过前者将进程的状态从就绪态（TASK_RUNNING）设置为TASK_INTERRUPTIBLE，允许通过发送signal唤醒它（即可中断的睡眠状态）；而后者将进程的状态设置为TASK_UNINTERRUPTIBLE，在这种状态下，不接收任何singal。
+
 ### 1.8 调度实体
 
 
@@ -453,7 +463,7 @@ struct rq {
 
 > 组调度是cgroup里面的概念，指将N个进程视为一个整体，参与系统中的调度过程，为何要引入**[组调度](http://oenhan.com/task-group-sched)**呢？假设用户A和B共用一台机器。我们可能希望A和B能公平的分享CPU资源，但是如果用户A使用创建了8个进程、而用户B只创建1个进程，根据CFS调度是基于进程的（假设用户进程的优先级相同），A用户占用的CPU的时间将是B用户的8倍。如何保证A、B用户公平分享CPU呢？**组调度**就能做到这一点。把属于用户A和B的进程各分为一组，调度程序将先从两个组中选择一个组，再从选中的组中选择一个进程来执行。如果两个组被选中的机率相当，那么用户A和B将各占有约50%的CPU。
 
-​	在内核中，进程组由task_group进行管理，其中涉及的内容很多都是cgroup控制机制 ，此处指重点描述组调度的部分，具体见如下注释。
+​	在内核中，进程组由task_group进行管理，其中涉及的内容很多都是cgroup控制机制 ，此处指重点描述组调度的部分，对于一个task_group来说，它的调度实体和运行队列都是每CPU一份的，一个（task_group对应的）调度实体只会被加入到相同CPU所对应的运行队列。而对于task来说，它的调度实体则只有一份（没有按CPU划分），调度程序的负载均衡功能可能会将（task对应的）调度实体从不同CPU所对应的运行队列移来移去。。
 
 | 调度实体            | 名称           | 描述                              | 对应调度器类           |
 | --------------- | ------------ | ------------------------------- | ---------------- |
@@ -589,15 +599,7 @@ static void update_curr(struct cfs_rq *cfs_rq)
 	curr->vruntime += calc_delta_fair(delta_exec, curr);/*计算虚拟时间*/
 	update_min_vruntime(cfs_rq);/*立即更新最小虚拟时间，因为必须小心保证该值是单调递增*/
 
-	if (entity_is_task(curr)) {
-		struct task_struct *curtask = task_of(curr);
-
-		trace_sched_stat_runtime(curtask, delta_exec, curr->vruntime);
-		cpuacct_charge(curtask, delta_exec);
-		account_group_exec_runtime(curtask, delta_exec);
-	}
-
-	account_cfs_rq_runtime(cfs_rq, delta_exec);
+···
 }
 ```
 
@@ -615,13 +617,14 @@ static void update_curr(struct cfs_rq *cfs_rq)
 
 #### 1.9.4 CFS调度类是如何运作的
 
-[参考链接](https://www.ibm.com/developerworks/cn/linux/l-cfs/index.html)
+[参考例子](http://www.cnblogs.com/openix/p/3254394.html)
 
-​	当一个普通新进程进入执行状态，CFS就会立即开启对虚拟运行时间的追踪，每个时钟中断来临的时候更新vruntime，调度器就根据vruntime的红黑树选择vruntime最小的进程来执行。
+​	当一个普通新进程进入执行状态，CFS就会立即开启对虚拟运行时间的追踪，每个时钟中断来临的时候，调用scheduler_tick()，然后根据当前进程的调度类，调用task_tick_fair()函数。task_tick_fair()中的entity_tick（）会调用update_curr(cfs_rq)更新vruntime，在entity_tick()中，首先会更新当前进程的实际运行时间和虚拟运行时间，这里很重要，在entity_tick()函数中最后面的check_preempt_tick()函数就是用来判断进程是否需要被调度的，其判断的标准有两个：
 
-具体的方法是：根据当前系统的情况计算targeted latency（调度周期），在这个调度周期中计算当前进程应该获得的时间片（物理时间），然后计算当前进程已经累积执行的物理时间，如果大于当前应该获得的时间片，那么更新本进程的vruntime并标记need resched flag，并在最近的一个调度点发起调度。
+- 先判断当前进程的实际运行时间是否超过CPU分配给这个进程的CPU时间，如果超过，则需要调度。
+- 再判断当前进程的vruntime是否大于下个进程的vruntime，如果大于，则需要调度。
 
-
+如果进程不需要被调度，则继续执行。如果进程需要被调度，就被标记上TIF_NEED_SCHED，并在最近的一个调度点发起调度，调度器就根据vruntime的红黑树选择vruntime最小的进程作为下一个要执行的进程。
 
 
 
@@ -643,11 +646,9 @@ static void update_curr(struct cfs_rq *cfs_rq)
 
 
 
+## 2. 调度相关系统调用
 
-
-## 3. 调度相关系统调用
-
-#### 3.1 与优先级相关的系统调用
+#### 2.1 与优先级相关的系统调用
 
 [（参考网址）](https://access.redhat.com/documentation/en-us/red_hat_enterprise_mrg/?version=2)
 
@@ -656,8 +657,8 @@ static void update_curr(struct cfs_rq *cfs_rq)
 |                           系统调用                           | 描述                                                         |
 | :----------------------------------------------------------: | :----------------------------------------------------------- |
 | [nice()](https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux_for_real_time/7/html/reference_guide/sect-using_library_calls_to_set_priority) | 给进程的静态优先级增加一个给定的值降低优先级，但只有超级用户才能使用负值来提高优先级 |
-| [getpriority()](http://www.jollen.org/blog/2006/10/getpriority_setpriority.html) |                                                              |
-|                        setpriority()                         |                                                              |
+| [getpriority()](http://www.jollen.org/blog/2006/10/getpriority_setpriority.html) | 获取普通进程的nice值（也可以设置实时进程的nice值）           |
+|                        setpriority()                         | 设置普通进程的nice值（也可以设置实时进程的nice值）           |
 
 - 实时进程相关
 
@@ -686,14 +687,16 @@ main(){
          sched_get_priority_max(SCHED_RR));
 }
 
-***
+结果：
+Valid priority range for SCHED_OTHER: 0 - 0
+Valid priority range for SCHED_FIFO: 1 - 99
+Valid priority range for SCHED_RR: 1 - 99
+
 ```
 
 
 
-#### 问题：为什么sched_get_priority_min()返回的是1而不是0？
-
-#### 3.2 与调度策略相关的系统调用
+#### 2.2 与调度策略相关的系统调用
 
 | 系统调用                                                     | 描述                                         |
 | ------------------------------------------------------------ | -------------------------------------------- |
@@ -701,11 +704,617 @@ main(){
 | [sched_getscheduler()](https://linux.die.net/man/2/sched_getscheduler) | 获取进程的调度策略                           |
 | sched_rr_get_interval()                                      | 获取SCHED_RR进程的时间片（需要超级用户权限） |
 
-#### 3.3 与处理器相关的系统调用
+#### 2.3 与处理器相关的系统调用
 
 | 系统调用            | 描述                                     |
 | ------------------- | ---------------------------------------- |
 | sched_yield()       | 暂时让出处理器（主要用于SCHED_FIFO进程） |
 | sched_getaffinity() | 获取当前进程的cpus_allowed位掩码         |
 | sched_setaffinity() | 设置当前进程的cpus_allowed位掩码         |
+
+## 3. 相关疑问与解答
+
+**1.为什么要有很多种类的优先级，为什么要分成普通调度和实时调度**
+
+​	linux针对普通进程和实时进程分别使用静态优先级static_prio和实时优先级rt_priority来指定其默认的优先级别, 然后通过normal_prio函数将他们分别转换为普通优先级normal_prio, 最终换算出动态优先级prio, 动态优先级prio才是内核调度时候优先考虑的优先级字段。
+
+
+
+**2.调度器是怎么运行的，会不会存在被其他进程抢占（跟中断有关）**
+
+​	Linux 的调度算法通过模块的方式实现，每种类型的调度器会有一个优先级，调度时会按照优先级遍历调度类，拥有一个可执行进程的最高优先级的调度器类胜出，去选择下面要执行的那个程序。
+
+
+
+**3.非实时进程什么时候会把优先级提高到实时优先级**
+
+​	当实时进程需要的资源被普通进程占用，此时需要临时提高此普通进程的优先级到最高优先级，或者比这个实时进程的优先级高一些，通常采取第二种方法。
+
+
+
+**4.每个进程都是一个调度实体吗？**
+
+是的，调度实体是调度的基本单位。
+
+
+
+**5.一个调度周期中的进程是如何切换的，每个调度周期结束后会发生什么。**
+
+​	通过scheduler_tick()，周期性地寻找vruntime最小的进程，找到之后，如果当前进程的运行时间已经超过了它的slice则设置一个请求重新调度的标志(TIF_NEED_RESCHED)，然后在中断返回时会执行抢占。当前进程被放进运行队列。-------在时钟中断中，调度相关的一些时间计数量会被更新。同时会检查一下目前运行的进程运行时间是不是超过了一个slice，如果超过了这个间隔，就会设置重新调度标记。会在schedule函数中完成调度并完成进程切换。如果没有小于这个slice量，那就不会触发重新调度。
+
+
+
+**6.新开进程的vruntime是多少？**
+
+​	假如新进程的vruntime初值为0的话，比老进程的值小很多，那么它在相当长的时间内都会保持抢占CPU的优势，老进程就要饿死了，这显然是不公平的。所以CFS是这样做的：每个CPU的运行队列cfs_rq都维护一个*min_vruntime*字段，记录该运行队列中所有进程的vruntime最小值，新进程的初始vruntime值就以它所在运行队列的min_vruntime为基础来设置，与老进程保持在合理的差距范围内。
+
+> 新进程的vruntime初值的设置与两个参数有关：
+>
+> > > - sched_child_runs_first*：规定fork之后让子进程先于父进程运行;
+> > >
+> > >
+> > > - sched_features的*START_DEBIT*位：规定新进程的第一次运行要有延迟。
+> > >
+> > >  子进程在创建时，vruntime初值首先被设置为min_vruntime；然后，如果sched_features中设置了START_DEBIT位，vruntime会在min_vruntime的基础上再增大一些。设置完子进程的vruntime之后，检查sched_child_runs_first参数，如果为1的话，就比较父进程和子进程的vruntime，若是父进程的vruntime更小，就对换父、子进程的vruntime，这样就保证了子进程会在父进程之前运行。
+
+
+
+**7.眠进程的vruntime一直保持不变吗？**
+
+​	如果休眠进程的 vruntime 保持不变，而其他运行进程的 vruntime 一直在推进，那么等到休眠进程终于唤醒的时候，它的vruntime比别人小很多，会使它获得长时间抢占CPU的优势，其他进程就要饿死了。这显然是另一种形式的不公平。CFS是这样做的：在休眠进程被唤醒时重新设置vruntime值，以min_vruntime值为基础，给予一定的补偿，但不能补偿太多，在`place_entity`中进行补偿计算。
+
+
+
+**8.休眠进程在唤醒时会立刻抢占CPU吗？**
+
+​	这是由CFS的*唤醒抢占 *特性决定的，即sched_features的*`WAKEUP_PREEMPT`位。决定的。由于休眠进程在唤醒时会获得vruntime的补偿，所以它在醒来的时候有能力抢占CPU是大概率事件，这也是CFS调度算法的本意，即保证交互式进程的响应速度，因为交互式进程等待用户输入会频繁休眠。除了交互式进程以外，主动休眠的进程同样也会在唤醒时获得补偿，例如通过调用sleep()、nanosleep()的方式，定时醒来完成特定任务，这类进程往往并不要求快速响应，如果由于主动休眠造成了整体性能的下降，可以禁用唤醒抢占特性或者修改`*sched_wakeup_granularity_ns*`参数，这个参数限定了一个唤醒进程要抢占当前进程之前必须满足的条件：只有当该唤醒进程的vruntime比当前进程的vruntime小、并且两者差距大于`sched_wakeup_granularity_ns`的情况下，才可以抢占，否则不可以。这个参数越大，发生唤醒抢占就越不容易。
+
+
+
+**9.进程从一个CPU迁移到另一个CPU上的时候vruntime会不会变？**
+
+​	每个CPU都有各自的运行队列，所以每个队列的最小虚拟运行时间不同，如果一个进程从`min_vruntime`更小的CPU (A) 上迁移到`min_vruntime`更大的CPU (B) 上，可能就会占便宜了，因为CPU (B) 的运行队列中进程的vruntime普遍比较大，迁移过来的进程就会获得更多的CPU时间片。这显然不太公平。可以使用`grep min_vruntime /proc/sched_debug`查看各个CPU队列的`min_vruntime`。
+
+因此CFS是这样做的：
+​	当进程从一个CPU的运行队列中出来 (dequeue_entity) 的时候，它的vruntime要减去队列的min_vruntime值；而当进程加入另一个CPU的运行队列 ( enqueue_entiry) 时，它的vruntime要加上该队列的min_vruntime值。这样，进程从一个CPU迁移到另一个CPU之后，vruntime保持相对公平。
+
+```c
+static void
+dequeue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
+{
+...
+        /*
+         * Normalize the entity after updating the min_vruntime because the
+         * update can refer to the ->curr item and we need to reflect this
+         * movement in our normalized position.
+         */
+        if (!(flags & DEQUEUE_SLEEP))
+                se->vruntime -= cfs_rq->min_vruntime;
+...
+}
+
+static void
+enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
+{
+        /*
+         * Update the normalized vruntime before updating min_vruntime
+         * through callig update_curr().
+         */
+        if (!(flags & ENQUEUE_WAKEUP) || (flags & ENQUEUE_WAKING))
+                se->vruntime += cfs_rq->min_vruntime;
+...
+}
+```
+
+​
+
+**10.实时进程会不会导致其它进程得不到运行机会？**
+
+​	如果实时进程占着CPU不放，会不会导致其它进程得不到运行机会，包括管理员的shell也无法运行、连基本的管理任务也进行不了，最终造成整个系统失去控制？
+
+​	通常不会。因为Linux kernel有一个**RealTime Throttling**机制，就是为了防止CPU消耗型的实时进程霸占所有的CPU资源而造成整个系统失去控制。它的原理很简单，就是保证无论如何普通进程都能得到一定比例（默认5%）的CPU时间，可以通过两个内核参数来控制：
+
+- /proc/sys/kernel/sched_rt_period_us
+  缺省值是1,000,000 μs (1秒)，表示实时进程的运行粒度为1秒。（注：修改这个参数请谨慎，太大或太小都可能带来问题）。
+
+- /proc/sys/kernel/sched_rt_runtime_us
+  缺省值是 950,000 μs (0.95秒)，表示在1秒的运行周期里所有的实时进程一起最多可以占用0.95秒的CPU时间。
+
+  ​	如果这0.05秒内没有任何普通进程需要使用CPU（一直没有TASK_RUNNING状态的普通进程）呢？这种情况下既然普通进程对CPU没有需求，实时进程是否可以运行超过0.95秒呢？不能。在剩下的0.05秒中内核宁可让CPU一直闲着，也不让实时进程使用。
+
+  ​	但是如果sched_rt_runtime_us=-1，表示取消限制，意味着实时进程可以占用100%的CPU时间（慎用，有可能使系统失去控制）。
+
+​        所以，Linux kernel默认情况下保证了普通进程无论如何都可以得到5%的CPU时间，尽管系统可能会慢如蜗牛，但管理员仍然可以利用这5%的时间设法恢复系统，比如停掉失控的实时进程，或者给自己的shell进程赋予更高的实时优先级以便执行管理任务，等等。
+
+
+
+**11.如果一个进程组内的进程在不同的CPU上运行，那么如何维护进程组的红黑树？**
+
+
+
+**12.为什么对于 ps -el 为什么 nice (NI) 是 0，而 PR (priority) 显示的是 80 而不是 120。**
+
+​	ps 中，如果是 normal process 就显示 60 + p->prio - MAX_RT_PRIO，如果是 realtime process 则只显示 rt。
+
+
+
+**13.进程组在每个cpu上都有对应的调度实体和cfs调度队列，那到底同一个进程组中的不同进程能否同时在不同的cpu上运行？**
+
+​	可以运行。
+
+**14.调度实体中组调度的组的优先级怎么确定？**
+
+​	实时进程组的优先级就被定义为“组内最高优先级的进程所拥有的优先级”。
+
+**15.新进程是如何入队的？**
+
+```
+fork或vfork后：
+do_fork
+_do_fork
+wake_up_new_task
+activate_task
+enqueue_task
+```
+
+
+
+-------------------------
+
+## 4. 相关源码及系统调用测试代码
+
+#### __schedule代码
+
+```c
+static void __sched notrace __schedule(bool preempt)
+{
+	struct task_struct *prev, *next;
+	unsigned long *switch_count;
+	struct rq_flags rf;
+	struct rq *rq;
+	int cpu;
+
+	cpu = smp_processor_id();
+	rq = cpu_rq(cpu);//跟当前进程相关的runqueue的信息被保存在rq中
+	prev = rq->curr;//把当前进程设置为前一个进程
+
+	schedule_debug(prev);//当前进程与时间相关的统计量的检查
+
+	if (sched_feat(HRTICK))
+		hrtick_clear(rq);
+
+	local_irq_disable();
+	rcu_note_context_switch(preempt);
+
+	/*
+	 * Make sure that signal_pending_state()->signal_pending() below
+	 * can't be reordered with __set_current_state(TASK_INTERRUPTIBLE)
+	 * done by the caller to avoid the race with signal_wake_up().
+	 */
+	rq_lock(rq, &rf);
+	smp_mb__after_spinlock();
+
+	/* Promote REQ to ACT */
+	rq->clock_update_flags <<= 1;
+	update_rq_clock(rq);//更新就绪队列的自身时钟信息
+
+	switch_count = &prev->nivcsw;
+	if (!preempt && prev->state) {//state: -1 unrunnable, 0 runnable, >0 stopped */
+		if (unlikely(signal_pending_state(prev->state, prev))) {
+			prev->state = TASK_RUNNING;//若没有待处理的信号则将进程的状态设置为RUNNING
+		} else {
+			deactivate_task(rq, prev, DEQUEUE_SLEEP | DEQUEUE_NOCLOCK);//若有待处理的信号则把当前进程移除队列
+			prev->on_rq = 0;
+
+			if (prev->in_iowait) {
+				atomic_inc(&rq->nr_iowait);
+				delayacct_blkio_start();
+			}
+
+			/*
+			 * If a worker went to sleep, notify and ask workqueue
+			 * whether it wants to wake up a task to maintain
+			 * concurrency.
+			 */
+			if (prev->flags & PF_WQ_WORKER) {
+				struct task_struct *to_wakeup;
+
+				to_wakeup = wq_worker_sleeping(prev);
+				if (to_wakeup)
+					try_to_wake_up_local(to_wakeup, &rf);
+			}
+		}
+		switch_count = &prev->nvcsw;//上下文切换计数
+	}
+	
+	/*核心调度函数*/
+
+	next = pick_next_task(rq, prev, &rf);
+	/*清除TIF_NEED_RESCHED标志*/
+	clear_tsk_need_resched(prev);
+	/*清除PREEMPT_NEED_RESCHED标志*/
+	clear_preempt_need_resched();
+
+	if (likely(prev != next)) {
+		/* 该CPU进程切换次数加1 */
+		rq->nr_switches++;
+		 /* 该CPU当前执行进程为新进程 */
+		rq->curr = next;
+		/*
+		 * The membarrier system call requires each architecture
+		 * to have a full memory barrier after updating
+		 * rq->curr, before returning to user-space. For TSO
+		 * (e.g. x86), the architecture must provide its own
+		 * barrier in switch_mm(). For weakly ordered machines
+		 * for which spin_unlock() acts as a full memory
+		 * barrier, finish_lock_switch() in common code takes
+		 * care of this barrier. For weakly ordered machines for
+		 * which spin_unlock() acts as a RELEASE barrier (only
+		 * arm64 and PowerPC), arm64 has a full barrier in
+		 * switch_to(), and PowerPC has
+		 * smp_mb__after_unlock_lock() before
+		 * finish_lock_switch().
+		 */
+		++*switch_count;
+
+		trace_sched_switch(preempt, prev, next);
+
+		/* Also unlocks the rq: */
+		rq = context_switch(rq, prev, next, &rf);
+	} else {
+		rq->clock_update_flags &= ~(RQCF_ACT_SKIP|RQCF_REQ_SKIP);
+		rq_unlock_irq(rq, &rf);
+	}
+
+	balance_callback(rq);
+}
+
+```
+
+#### pick_next_task代码
+
+```c
+static inline struct task_struct *
+pick_next_task(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
+{
+	const struct sched_class *class;
+	struct task_struct *p;
+
+	/*
+	 * Optimization: we know that if all tasks are in the fair class we can
+	 * call that function directly, but only if the @prev task wasn't of a
+	 * higher scheduling class, because otherwise those loose the
+	 * opportunity to pull in more work from other CPUs.
+	 */
+	 /*如果当前进程属于cfs或者idle调度类并且当且运行队列中实体数量等于cfs队列实体数量
+	  *
+      *
+      *
+	  */
+	if (likely((prev->sched_class == &idle_sched_class ||
+		    prev->sched_class == &fair_sched_class) &&
+		   rq->nr_running == rq->cfs.h_nr_running)) {
+
+		p = fair_sched_class.pick_next_task(rq, prev, rf);//pick_next_task_fair
+	/* May return RETRY_TASK when it finds a higher prio class has runnable tasks.*/
+		/*RETRY_TASK表示当前队列里还有除了cfs和idle优先级更高的调度类*/
+		if (unlikely(p == RETRY_TASK))
+			goto again;
+
+		/* Assumes fair_sched_class->next == idle_sched_class */
+		//如果调度队列内没有cfs实体则选择idle实体
+		if (unlikely(!p))
+			p = idle_sched_class.pick_next_task(rq, prev, rf);
+
+		return p;
+	}
+
+again:
+
+/*#define sched_class_highest (&stop_sched_class)
+  #define for_each_class(class) \
+	   for (class = sched_class_highest; class; class = class->next)
+	
+	extern const struct sched_class stop_sched_class;
+	extern const struct sched_class dl_sched_class;
+	extern const struct sched_class rt_sched_class;
+	extern const struct sched_class fair_sched_class;
+	extern const struct sched_class idle_sched_class;
+*/
+	for_each_class(class) {
+		p = class->pick_next_task(rq, prev, rf);
+		if (p) {
+			if (unlikely(p == RETRY_TASK))
+				goto again;
+			return p;
+		}
+	}
+	/* The idle class should always have a runnable task: */
+	BUG();
+}
+```
+
+#### context_switch代码
+
+```c
+/*
+ * context_switch - switch to the new MM and the new thread's register state.
+ */
+
+static __always_inline struct rq *
+context_switch(struct rq *rq, struct task_struct *prev,
+        struct task_struct *next, struct pin_cookie cookie)
+{
+ struct mm_struct *mm, *oldmm;
+ prepare_task_switch(rq, prev, next);
+ mm = next->mm;
+ oldmm = prev->active_mm;
+ /*
+  * For paravirt, this is coupled with an exit in switch_to to
+  * combine the page table reload and the switch backend into
+  * one hypercall.
+  */
+ arch_start_context_switch(prev);
+/*
+  如果next是内核线程，
+  则线程使用prev所使用的地址空;schedule( )函数把该线程设置为懒惰TLB模式
+*/
+ if (!mm) {
+  next->active_mm = oldmm;
+  atomic_inc(&oldmm->mm_count);
+  enter_lazy_tlb(oldmm, next);
+ } else
+//如果next是一个普通进程，schedule( )函数用next的地址空间替换prev的地址空间
+  switch_mm_irqs_off(oldmm, mm, next);
+/*
+  如果prev是内核线程，context_switch()函数就把指向prev
+  内存描述符的指针保存到运行队列的prev_mm字段中，然后重新设置prev->active_mm
+*/
+ if (!prev->mm) {
+  prev->active_mm = NULL;
+  rq->prev_mm = oldmm;
+ }
+ /*
+  * Since the runqueue lock will be released by the next
+  * task (which is an invalid locking op but in the case
+  * of the scheduler it's an obvious special-case), so we
+  * do an early lockdep release here:
+  */
+ lockdep_unpin_lock(&rq->lock, cookie);
+ spin_release(&rq->lock.dep_map, 1, _THIS_IP_);
+ /* Here we just switch the register state and the stack. */
+ /*context_switch()终于可以调用switch_to()执行prev和next之间的进程切换了*/
+ /*具体的切换工作，切换堆栈和寄存器*/
+ switch_to(prev, next, prev);
+ /* 屏障同步, 一般用编译器指令实现
+     * 确保了switch_to和finish_task_switch的执行顺序
+     * 不会因为任何可能的优化而改变 */
+ barrier();
+ return finish_task_switch(prev);
+}
+```
+
+#### 系统调用测试代码
+
+```c
+#define _GNU_SOURCE
+
+#include <stdio.h>
+#include <sched.h>
+#include <zconf.h>
+#include <sys/resource.h>
+#include <memory.h>
+
+/*
+ * >nice() 给进程的静态优先级增加一个给定的值降低优先级，但只有超级用户才能使用负值来提高优先级
+ * >sched_setparam()	设置实时进程的优先级
+ * >sched_getparam()	获取实时进程的优先级
+ * >sched_get_priority_max()	返回给定调度策略的最大优先级(如果是实时进程返回99，非实时进返回0)
+ * >sched_get_priority_min()	返回给定调度策略的最小优先级(如果是实时进程返回1，非实时进返回0)
+ *
+ * >sched_setscheduler()	设置进程的调度策略（需要超级用户权限）
+ * >sched_getscheduler()	获取进程的调度策略
+ * >sched_rr_get_interval()	获取SCHED_RR进程的时间片（需要超级用户权限）
+ *
+ * sched_yield()	暂时让出处理器（主要用于SCHED_FIFO进程）
+ * sched_getaffinity()	获取当前进程的cpus_allowed位掩码
+ * sched_setaffinity()	设置当前进程的cpus_allowed位掩码
+ */
+int getscheduler(pid_t pid, struct sched_param sp);
+
+void get_RR_ts(pid_t pid);
+
+void line();
+
+void get_prio_width(int policy);
+
+void getaffinity(pid_t pid);
+
+void setaffinity(pid_t pid);
+
+int cpucount = 0;
+
+int priority = 0;
+
+int main() {
+
+    int prio;
+    int ret;
+    pid_t pid;
+    struct sched_param sp;
+    line();
+    printf("please input pid \n");
+    scanf("%d", &pid);
+    int policy = getscheduler(pid, sp);
+    if (policy == 1) {
+        printf(" \nThis is a realtime process\n ");
+        line();
+        getaffinity(pid);
+    } else {
+        printf("\nThis is not a realtime process\n");
+        line();
+        printf("You can change the nice value by setpriority() [-20,19]  \n nice =");
+        int nicep;
+        scanf("%d", &nicep);
+        //nice(nicep);
+        int success = setpriority(PRIO_PROCESS, pid, nicep);
+        line();
+        if (success == 0) {
+            printf("change nice value succeed\n");
+            printf("-> setpriority\n");
+        } else { printf("change nice value failed. need CAP_SYS_NICE or superuser\n"); }
+        printf("new nice = %d\n", getpriority(PRIO_PROCESS, pid));
+        getaffinity(pid);
+        setaffinity(pid);
+        getaffinity(pid);
+        return;
+    }
+    get_RR_ts(pid);
+    line();
+    printf("please input new priority");
+    get_prio_width(policy);
+    scanf("%d", &prio);
+    sp.__sched_priority = prio;
+    line();
+    printf("Whether to set the schedule policy ?\n1.Yes  2.No\n");
+    int choose;
+    scanf("%d", &choose);
+    if (choose == 1) {
+        line();
+        printf("please choose schedule policy\n0. SCHED_OTHER\n1. SCHED_FIFO\n2. SCHED_RR\n3. SCHED_BATCH\n5. SCHED_IDLE\n");
+        int policy = 0;
+        scanf("%d", &policy);
+        ret = sched_setscheduler(pid, policy, &sp);
+        printf("-> sched_setscheduler\n");
+        if (ret == -1) {
+            printf("error");
+            perror("sched_setscheduler");
+            return;
+
+        }
+    } else if (choose = 2) {
+        sched_setparam(pid, &sp);
+        printf("-> sched_setparam\n");
+    }
+    line();
+    getscheduler(pid, sp);
+    printf("\n");
+    get_RR_ts(pid);
+    setaffinity(pid);
+    getaffinity(pid);
+}
+
+int getscheduler(pid_t pid, struct sched_param sp) {
+    printf("\n-> sched_getscheduler\n");
+    int policy;
+    int ret;
+    int sig;
+    ret = sched_getparam(pid, &sp);
+
+    policy = sched_getscheduler(pid);
+    printf("Scheduler Policy(%2d) for PID: %2d  -> ", policy, pid);
+    priority = sp.__sched_priority;
+    switch (policy) {
+        case SCHED_OTHER:
+            printf("SCHED_OTHER");
+            sig = 0;
+            printf("\n-> getpriority\nnice = %d\n", getpriority(PRIO_PROCESS, pid));
+            break;
+        case SCHED_RR:
+            printf("SCHED_RR");
+            sig = 1;
+            printf("  priority = %d", priority);
+            break;
+        case SCHED_FIFO:
+            printf("SCHED_FIFO");
+            sig = 1;
+            printf("  priority = %d", priority);
+            break;
+        case SCHED_BATCH:
+            printf("SCHED_BATCH");
+            sig = 0;
+            printf("  priority = %d", priority);
+            break;
+        case SCHED_IDLE:
+            printf("SCHED_IDLE");
+            sig = 0;
+            printf("  priority = %d", priority);
+            break;
+        default:
+            printf("Unknown..");
+            sig = 0;
+    }
+    return sig;
+
+}
+void get_RR_ts(pid_t pid) {
+    printf("-> get_RR_ts");
+    struct timespec ts;
+    int ret;
+    /* real apps must check return values */
+    if (sched_rr_get_interval(pid, &ts) == 0) {
+        printf("\nTimeslice: %lu.%lu\n", ts.tv_sec, ts.tv_nsec);
+    } else { printf("get timeslice failed"); }
+}
+void line() {
+    printf("---------------------------\n");
+}
+
+void get_prio_width(int policy) {
+    int min = sched_get_priority_min(policy);
+    int max = sched_get_priority_max(policy);
+    printf("[%d,%d]\n", min, max);
+    printf("-> sched_get_priority_min/sched_get_priority_max\n");
+
+}
+
+void getaffinity(pid_t pid) {
+    printf("-> sched_getaffinity");
+    cpu_set_t my_set;
+    int ret;
+    CPU_ZERO(&my_set);
+    ret = sched_getaffinity(pid, sizeof(my_set), &my_set);
+    char str[80];
+    strcpy(str, " ");
+    int count = 0;
+    int j;
+
+    for (j = 0; j < CPU_SETSIZE; ++j) {
+        if (CPU_ISSET(j, &my_set)) {
+            ++count;
+            char cpunum[3];
+            sprintf(cpunum, "%d ", j);
+            strcat(str, cpunum);
+        }
+    }
+    cpucount = sysconf(_SC_NPROCESSORS_ONLN);
+    printf("\npid %d affinity has %d CPUs : %s\n", pid, count, str);
+    line();
+
+}
+
+void setaffinity(pid_t pid) {
+    printf("-> sched_setaffinity\n");
+//http://blog.saliya.org/2015/07/get-and-set-process-affinity-in-c.html
+    cpu_set_t my_set;
+    line();
+    printf("There are %d CPUs\nPlease select which CPU you need to run on\n", cpucount);
+    printf("0.CPU 0\n1.CPU 1\n2.CPU 0 and 1\nYour select:");
+    int choose;
+    scanf("%d", &choose);
+    CPU_ZERO(&my_set);
+    int ret;
+    if (choose == 0) {
+        CPU_SET(0, &my_set);
+    } else if (choose == 1) {
+        CPU_SET(1, &my_set);
+    } else if (choose == 2) {
+        CPU_SET(0, &my_set);
+        CPU_SET(1, &my_set);
+    } else {
+        return;
+    }
+    ret = sched_setaffinity(pid, sizeof(my_set), &my_set);
+}
+```
 
